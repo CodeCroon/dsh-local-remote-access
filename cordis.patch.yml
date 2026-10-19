@@ -1,0 +1,21 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Remote access — bundle layer.
+#
+# This package adds one row. It does not touch the Web server row: since
+# 0.2.1 the launcher accepts one concrete local interface address
+# (`dsh web --host 192.0.2.10`) and rejects wildcard addresses, so binding is
+# the launcher's job and a deployment states its own address on the command
+# line.
+#
+# The row id is `local-remote-access` on purpose: `@deepseek-ai/dsh-base`
+# already owns a row named `remote-access` (the Gateway's remote-access policy
+# service), and reusing that id replaces it, leaving every Gateway consumer
+# waiting for the `remoteAccess` service.
+# ══════════════════════════════════════════════════════════════════════════════
+- insert:
+    - id: local-remote-access
+      name: '@local/dsh-remote-access'
+      config:
+        publicOrigin: ''
+        token: ''
+        tokenHeader: 'X-DSH-Remote-Token'

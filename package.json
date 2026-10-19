@@ -1,0 +1,32 @@
+{
+  "name": "@local/dsh-remote-access",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Ready-made diagnostics and a token session handoff for a DSH Web profile that a reverse proxy on another machine forwards to browsers.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib/",
+    "cordis.patch.yml",
+    "locale/",
+    "docs/",
+    "README.md"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "test": "node --import ./tools/register-hooks.mjs --test --test-isolation=none",
+    "check:patch": "node --import ./tools/register-hooks.mjs ./tools/check-patch.mjs"
+  }
+}

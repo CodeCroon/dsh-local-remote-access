@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Remote access",
+    "description": "Bind the Web surface so a reverse proxy on another machine can reach it, and optionally hand that proxy a browser session."
+  }
+}
