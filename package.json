@@ -1,8 +1,8 @@
 {
   "name": "@local/dsh-remote-access",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
-  "description": "Ready-made diagnostics and a token session handoff for a DSH Web profile that a reverse proxy on another machine forwards to browsers.",
+  "description": "Diagnostics, a token session handoff, and an optional in-app directory-picker start for a DSH Web profile behind a reverse proxy.",
   "type": "module",
   "main": "index.js",
   "exports": {

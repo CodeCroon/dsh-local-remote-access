@@ -17,7 +17,7 @@ it('imports nothing outside its own directory', async () => {
 	// package specifiers such as `@deepseek-ai/*` do not resolve from there.
 	// The row therefore has to stay dependency-free, or the profile fails to
 	// load it with ERR_MODULE_NOT_FOUND.
-	for (const file of ['../index.js', '../lib/origin.js']) {
+	for (const file of ['../index.js', '../lib/origin.js', '../lib/browse-root.js']) {
 		const source = await readFile(new URL(file, import.meta.url), 'utf8');
 		const bare = [...source.matchAll(/from\s+['"]([^'"]+)['"]/gu)]
 			.map((match) => match[1])
@@ -48,6 +48,7 @@ it('adds its row without displacing the shipped remote-access row', async () => 
 		publicOrigin: '',
 		token: '',
 		tokenHeader: 'X-DSH-Remote-Token',
+		browseRoot: '',
 	});
 
 	// The Web server row still belongs to the shipped web bundle, so the

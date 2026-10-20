@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Remote access",
-    "description": "Bind the Web surface so a reverse proxy on another machine can reach it, and optionally hand that proxy a browser session."
+    "description": "Bind the Web surface so a reverse proxy on another machine can reach it, optionally hand that proxy a browser session, and start the in-app directory picker at a fixed directory."
   }
 }

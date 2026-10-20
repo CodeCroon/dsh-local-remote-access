@@ -5,12 +5,14 @@ import { apply, LOGIN_PATH, MIN_TOKEN_BYTES } from '../index.js';
 
 const TOKEN = 't'.repeat(MIN_TOKEN_BYTES);
 const LAUNCH = 'launch-token';
+const BROWSE_ROOT = process.platform === 'win32' ? 'D:\\MyWorkSpace' : '/srv/mywork';
 
 function rowConfig(overrides = {}) {
 	return {
 		publicOrigin: '',
 		token: '',
 		tokenHeader: 'X-DSH-Remote-Token',
+		browseRoot: '',
 		...overrides,
 	};
 }
@@ -22,7 +24,7 @@ function rowConfig(overrides = {}) {
  * same context as if Connection were present.
  */
 function createHarness(options = {}) {
-	const state = { routes: [], warnings: [], infos: [], exchanges: [] };
+	const state = { routes: [], warnings: [], infos: [], exchanges: [], effects: [] };
 	const trusted = options.trusted ?? [];
 	const connection = {
 		requestRejection({ headers }) {
@@ -67,12 +69,15 @@ function createHarness(options = {}) {
 			warn: (message) => state.warnings.push(message),
 		},
 		effect(factory) {
-			return factory();
+			const dispose = factory();
+			if (typeof dispose === 'function') state.effects.push(dispose);
+			return dispose;
 		},
-		inject(_services, callback) {
-			callback(ctx);
+		inject(services, callback) {
+			if (services.every((service) => ctx[service] !== undefined)) callback(ctx);
 		},
 	};
+	if (options.picker !== undefined) ctx.directoryPicker = { capability: () => options.picker };
 	return { ctx, state };
 }
 
@@ -139,6 +144,7 @@ describe('config validation', () => {
 	it('refuses a non-string field', () => {
 		const { ctx } = createHarness();
 		assert.throws(() => apply(ctx, rowConfig({ token: 42 })), /token must be a string/u);
+		assert.throws(() => apply(ctx, rowConfig({ browseRoot: 42 })), /browseRoot must be a string/u);
 	});
 
 	it('applies defaults for a missing config', () => {
@@ -172,6 +178,72 @@ describe('--trusted-host switch', () => {
 		apply(ctx, rowConfig({ token: TOKEN, publicOrigin: 'https://dsh.example.com' }));
 		assert.equal(state.routes.length, 1);
 		assert.equal(state.warnings.length, 0);
+	});
+});
+
+/** A directory-picker capability stand-in; `kind` selects the interaction. */
+function createPicker(kind = 'browse') {
+	const calls = [];
+	const picker = {
+		kind,
+		async list(path) {
+			calls.push(path);
+			return { path: path ?? 'HOME', home: 'HOME', crumbs: [], entries: [], truncated: false };
+		},
+		async createDirectory() {},
+	};
+	return { picker, calls };
+}
+
+describe('browse root', () => {
+	it('defaults the browse listing to the configured root when the switch is on', async () => {
+		const { picker, calls } = createPicker();
+		const { ctx, state } = createHarness({ picker });
+		apply(ctx, rowConfig({ browseRoot: BROWSE_ROOT }));
+
+		const listing = await picker.list(undefined);
+		assert.equal(calls.at(-1), BROWSE_ROOT);
+		assert.equal(listing.path, BROWSE_ROOT);
+		assert.equal(listing.home, BROWSE_ROOT);
+		assert.match(state.infos.at(-1), /opens at/u);
+	});
+
+	it('does not touch the picker when the --trusted-host switch is off', () => {
+		const { picker } = createPicker();
+		const original = picker.list;
+		const { ctx, state } = createHarness({ picker, trustedHosts: [] });
+		apply(ctx, rowConfig({ browseRoot: BROWSE_ROOT }));
+		assert.equal(picker.list, original);
+		assert.match(state.warnings[0], /no --trusted-host/u);
+	});
+
+	it('warns instead of wrapping when the composed picker is native', () => {
+		const { picker } = createPicker('native');
+		const original = picker.list;
+		const { ctx, state } = createHarness({ picker });
+		apply(ctx, rowConfig({ browseRoot: BROWSE_ROOT }));
+		assert.equal(picker.list, original);
+		assert.match(state.warnings.at(-1), /native/u);
+	});
+
+	it('restores the picker listing when the row is disposed', () => {
+		const { picker } = createPicker();
+		const original = picker.list;
+		const { ctx, state } = createHarness({ picker });
+		apply(ctx, rowConfig({ browseRoot: BROWSE_ROOT }));
+		assert.notEqual(picker.list, original);
+		for (const dispose of state.effects) dispose();
+		assert.equal(picker.list, original);
+	});
+
+	it('refuses a relative root at load time', () => {
+		const { ctx } = createHarness({ picker: createPicker().picker });
+		assert.throws(() => apply(ctx, rowConfig({ browseRoot: 'relative' })), /fully qualified/u);
+	});
+
+	it('does nothing when the picker service is absent', () => {
+		const { ctx } = createHarness();
+		assert.doesNotThrow(() => apply(ctx, rowConfig({ browseRoot: BROWSE_ROOT })));
 	});
 });
 

@@ -19,3 +19,4 @@
         publicOrigin: ''
         token: ''
         tokenHeader: 'X-DSH-Remote-Token'
+        browseRoot: ''

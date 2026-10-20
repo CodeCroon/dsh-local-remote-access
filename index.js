@@ -6,7 +6,7 @@
  * `--trusted-host` is its switch. Without it, nothing is mounted and nothing is
  * logged, so a plain local `dsh web` behaves as if the bundle were absent.
  *
- * With the switch on, the row adds two things to a Web profile that binds a
+ * With the switch on, the row adds three things to a Web profile that binds a
  * concrete LAN address (`dsh web --host <address>`; the launcher rejects
  * wildcard addresses):
  *
@@ -17,12 +17,17 @@
  *    on one dedicated path; the row mints the DSH browser session in-process
  *    through the host's own exchange, so the per-process launch token never
  *    reaches the proxy, the browser, or a log.
+ * 3. An optional directory-picker start — `browseRoot` moves the in-app
+ *    dialog's default path and home anchor to one absolute directory. It only
+ *    changes where the dialog opens; browsing the rest of the host stays
+ *    possible and is not a security boundary.
  *
  * The module deliberately imports nothing outside its own directory: a bundle
  * installed from a local path is linked into the profile, and package
  * specifiers such as `@deepseek-ai/*` do not resolve from that location.
  * @module @local/dsh-remote-access
  */
+import { applyBrowseRoot, normalizeBrowseRoot } from './lib/browse-root.js';
 import { headerValue, loginOrigin, normalizePublicOrigin, sameSecret } from './lib/origin.js';
 
 /** Stable Cordis plugin name. */
@@ -42,6 +47,7 @@ const CONFIG_DEFAULTS = Object.freeze({
 	publicOrigin: '',
 	token: '',
 	tokenHeader: 'X-DSH-Remote-Token',
+	browseRoot: '',
 });
 
 /**
@@ -51,7 +57,7 @@ const CONFIG_DEFAULTS = Object.freeze({
  * a linked bundle cannot resolve at runtime, and a silent no-op row is worse
  * than a loud failure here.
  * @param {unknown} config - raw row config from the composition.
- * @returns {{ publicOrigin: string, token: string, tokenHeader: string }} resolved config.
+ * @returns {{ publicOrigin: string, token: string, tokenHeader: string, browseRoot: string }} resolved config.
  * @throws {Error} when a supplied field is not a string.
  */
 function resolveConfig(config) {
@@ -142,6 +148,7 @@ function mintSession(connection, authority, launchToken) {
 export function apply(ctx, config) {
 	const settings = resolveConfig(config);
 	const publicOrigin = normalizePublicOrigin(settings.publicOrigin);
+	const browseRoot = normalizeBrowseRoot(settings.browseRoot);
 	const token = settings.token;
 	const headerName = settings.tokenHeader.toLowerCase();
 	const host = ctx.webServer.host;
@@ -159,7 +166,7 @@ export function apply(ctx, config) {
 	// remote authority gets nothing mounted and no log line, so a plain local
 	// `dsh web` behaves exactly as it does without the bundle.
 	if (trustedHosts.length === 0) {
-		if (token !== '' || publicOrigin !== '') {
+		if (token !== '' || publicOrigin !== '' || browseRoot !== '') {
 			ctx.logger.warn('remote-access: row configured, but this run declared no --trusted-host, so remote access stays off; add --trusted-host <authority> to enable it');
 		}
 		return;
@@ -169,6 +176,22 @@ export function apply(ctx, config) {
 		ctx.logger.warn(`remote-access: the Web server is bound to ${host}, so only a proxy on this same machine can reach it; for a proxy on another machine start dsh with --host <this machine's LAN address> (wildcard addresses are rejected)`);
 	} else {
 		ctx.logger.info(`remote-access: listening on ${host}:${port}; a reverse proxy on another machine can reach it`);
+	}
+
+	// The in-app picker is DSH's own adaptive choice; this row only changes the
+	// directory that dialog opens at, and only while the row is active. A native
+	// picker renders on the host display and has no listing to redirect.
+	if (browseRoot !== '') {
+		ctx.inject(['directoryPicker'], (pickerCtx) => {
+			const capability = pickerCtx.directoryPicker.capability();
+			if (capability.kind !== 'browse') {
+				pickerCtx.logger.warn(`remote-access: browseRoot ${browseRoot} is set, but this run uses the "${capability.kind}" directory picker, so the root has no effect`);
+				return;
+			}
+			const restore = applyBrowseRoot(capability, browseRoot);
+			pickerCtx.logger.info(`remote-access: the in-app directory picker opens at ${browseRoot}`);
+			pickerCtx.effect(() => restore, 'remote-access: browse root');
+		});
 	}
 
 	ctx.inject(['connection'], (connectionCtx) => {
