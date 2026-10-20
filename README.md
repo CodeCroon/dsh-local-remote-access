@@ -11,17 +11,23 @@ browser ──代理认证──▶ reverse_proxy ──token──▶ localhost
 
 ## 安装
 
-1. 把本目录放到运行 DSH 的那台机器（下称 `localhost`，例如 `D:\DSH-plug`）。零依赖，不需要联网安装。
-2. 安装 bundle：DSH Web → Plugins → 安装本地 bundle，填绝对路径；或 `plugin_manager install_bundle`。安装后插件列表多一行 `local-remote-access`，日志里没有出现 `remote-access:` 开头的行时，重启一次 `dsh`。
-3. 启动：
+在运行 DSH 的那台机器（下称 `localhost`）上从仓库安装：
 
-   ```powershell
-   dsh --profile web --host 192.168.1.1 --no-open --trusted-host dsh.example.com
-   ```
+```powershell
+plugin_manager install_bundle github:CodeCroon/dsh-local-remote-access
+```
 
-   - `--host`：本机某块网卡的地址，通配地址会被拒绝；绑到另一台机器能连上的地址，反向代理才有意义。
-   - `--trusted-host`：浏览器实际使用的权威，`域名` 或 `域名:端口`，可重复传。它同时是本插件的开关，不带就完全不启用；同网段直接访问 `http://<LAN IP>:3080` 时可以不带，监听地址本身已被接受。
-   - `--no-open`：这台机器通常没人盯桌面，不要弹浏览器。`--port` 照旧生效。
+DSH Web 的 Plugins 页也能装，填同一个 spec；完整仓库地址 `https://github.com/CodeCroon/dsh-local-remote-access` 同样接受。安装前 DSH 会先确认仓库可达，这台机器要能访问 github.com 并装有 git（pnpm 从 git 拉取）。安装后插件列表多一行 `local-remote-access`，日志里没有出现 `remote-access:` 开头的行时，重启一次 `dsh`。
+
+然后启动（`--host` 写本机一块网卡的地址，通配地址会被拒绝）：
+
+```powershell
+dsh --profile web --host 192.168.1.1 --no-open --trusted-host dsh.example.com
+```
+
+- `--host`：本机某块网卡的地址，通配地址会被拒绝；绑到另一台机器能连上的地址，反向代理才有意义。
+- `--trusted-host`：浏览器实际使用的权威，`域名` 或 `域名:端口`，可重复传。它同时是本插件的开关，不带就完全不启用；同网段直接访问 `http://<LAN IP>:3080` 时可以不带，监听地址本身已被接受。
+- `--no-open`：这台机器通常没人盯桌面，不要弹浏览器。`--port` 照旧生效。
 
 ## 配置
 
@@ -140,8 +146,10 @@ netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=3080 conne
 ## 开发
 
 ```powershell
+git clone https://github.com/CodeCroon/dsh-local-remote-access
+cd dsh-local-remote-access
 npm test            # 纯函数 + 假 ctx 行为测试 + 对真实 DSH 安装的冒烟测试
 npm run check:patch # 用 DSH 自己的方言解析 cordis.patch.yml，打印实际组合结果
 ```
 
-`tools/` 只服务本地测试。运行时本包不导入任何 `@deepseek-ai/*`：从本地路径安装的 bundle 是链接进 profile 的，从链接位置解析不到这些包，所以 `index.js` 只依赖 Node 内建模块和同目录文件；冒烟测试借 DSH 的解析规则对真实安装做组合断言。默认指向本机 npx 缓存，可用 `DSH_DEV_MODULES` 覆盖。
+本包在运行时只依赖 Node 内建模块和同目录文件，不导入任何 `@deepseek-ai/*`；`tools/` 只服务本地测试，冒烟测试借 DSH 的解析规则对真实安装做组合断言。默认指向本机 npx 缓存，可用 `DSH_DEV_MODULES` 覆盖。
