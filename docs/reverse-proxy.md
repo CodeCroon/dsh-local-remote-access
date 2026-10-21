@@ -38,7 +38,7 @@ dsh.example.com {
 - `10.0.0.5` 换成从 `reverse_proxy` 能连到的 `localhost` 地址：同网段 IP、Tailscale 或 ZeroTier 都行。
 - `basic_auth` 是 Caddy 自带的 HTTP Basic 认证：浏览器弹原生登录框，密码只以 bcrypt 哈希存在配置里，`<hash>` 用 `caddy hash-password --plaintext '你的密码'` 生成。它只挡浏览器，和插件的 `token` 是两件事；多用户或 MFA 换成 `forward_auth` / Cloudflare Access，或者删掉这段把认证交给上游网关。
 - `caddy validate --config Caddyfile` 先过语法。
-- 想免掉 DSH 登录，把「会话交接」那节的配置加上。
+- 想免掉 DSH 登录，把「会话交接」那节的 `@noSession`、`@exchange`、`handle` 三段并进来，原来的 `reverse_proxy` 收进最后的 `handle { ... }`。
 
 ## nginx
 
@@ -107,20 +107,25 @@ Caddy 改成不终止 TLS，监听 `:8080`：
 
 浏览器第一次访问时还没有 DSH 会话。代理发现请求里没有 `dsh-auth-*` cookie，就把 `GET /` 送到 `/__dsh/remote/login` 并注入令牌；插件换出会话后 303 回 `/`，cookie 有效期内不再需要这一步。完整原理见 [README 的会话交接](../README.md#会话交接)。
 
-Caddy 的写法：
+Caddy 的写法：认证、自动交接和转发放在同一个 site block 里。
 
 ```caddyfile
 dsh.example.com {
-	basic_auth { ops <hash> }
+	basic_auth {
+		# caddy hash-password --plaintext '你的密码'
+		ops $2a$14$REPLACE_WITH_BCRYPT_HASH
+	}
 
+	# 没有 DSH 会话时，先去换一个
 	@noSession {
 		path /
 		not header Cookie *dsh-auth-*
 	}
 	handle @noSession {
-		redir /__dsh/remote/login
+		redir * /__dsh/remote/login
 	}
 
+	# 令牌只在这一条路径上注入
 	@exchange path /__dsh/remote/login
 	handle @exchange {
 		reverse_proxy 10.0.0.5:3080 {
@@ -138,6 +143,19 @@ dsh.example.com {
 	}
 }
 ```
+
+- `basic_auth` 的账号在块里一行一个：`{` 跟在本行行尾，`}` 独占一行。`basic_auth { ops <hash> }` 这种单行块 Caddyfile 解析不了。
+- `redir` 的第一个参数是 matcher 位，路径会被当成 matcher：`redir /__dsh/remote/login` 等于只给了 matcher 没给 `<to>`，Caddy 报参数缺失。`*` 才是「匹配到的请求全部跳转」。
+- 令牌从环境变量取：`{env.DSH_REMOTE_TOKEN}` 读的是 Caddy 进程自己的环境，变量缺失就展开成空串，交换路径只剩 404。
+
+`caddy.env` 一行一个变量，权限 600：
+
+```sh
+# caddy.env
+DSH_REMOTE_TOKEN=<与插件的 token 相同，建议 16 字节以上随机值>
+```
+
+systemd 在单元或 drop-in 里加 `EnvironmentFile=/etc/caddy/caddy.env`；直接运行用 `caddy run --envfile /etc/caddy/caddy.env --config /etc/caddy/Caddyfile`。
 
 nginx 的写法：
 
@@ -197,11 +215,11 @@ location / {
 | 502 / 连接被拒 | 两台机器不通、DSH 只绑了 `127.0.0.1`、防火墙 | 看 `localhost` 的启动日志确认监听地址，再查网络与防火墙 |
 | 消息不流式、长时间空白 | 反代缓冲了 SSE | `flush_interval -1`（Caddy）/ `proxy_buffering off`（nginx） |
 | WebSocket 连不上 | 没透传 `Upgrade` | 按上面两个示例补齐 |
-| 会话交接 404 | 令牌头没注入、路径不对、`token` 没配 | 三处逐个核对；失败一律 404 是设计如此 |
+| 会话交接 404 | 令牌头没注入（`{env.*}` 为空也算）、路径不对、`token` 没配 | 逐个核对；失败一律 404 是设计如此 |
 
 ## 安全
 
-- 令牌只放在请求头里：不进 URL，也不要出现在访问日志；Caddy 默认不记访问日志，要记就别把 `X-DSH-Remote-Token` 打进日志。
+- 令牌只放在请求头里：不进 URL，也不要出现在访问日志；Caddyfile 里只写 `{env.DSH_REMOTE_TOKEN}`，值留在权限 600 的 `caddy.env`。Caddy 默认不记访问日志，要记就别把 `X-DSH-Remote-Token` 打进日志。
 - 公共入口必须全站 HTTPS 并保持 http→https 跳转：会话 cookie 只有 `HttpOnly; SameSite=Strict`，没有 `Secure`。
 - 只放这一个入口：`localhost` 的 3080 只允许 `reverse_proxy` 连（安全组、防火墙、隧道都行）；DSH 那边用 `--host <本机 LAN 地址>` 启动。
 - cookie 的有效期与撤销见 README 的「会话交接」，`browseRoot` 的边界见「安全」一节。
